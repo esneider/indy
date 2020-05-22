@@ -1,0 +1,7 @@
+bip32==0.0.7
+mnemonic==0.19
+bech32==1.2.0
+coincurve==13.0.0
+connectrum==0.8.1
+asyncio==3.4.3
+tqdm==4.46.0

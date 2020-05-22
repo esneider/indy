@@ -1,0 +1,30 @@
+[
+    {
+        "host": "electrum.acinq.co",
+        "port": "s50002"
+    },
+    {
+        "host": "fortress.qtornado.com",
+        "port": "s50002"
+    },
+    {
+        "host": "electrum.hodlister.co",
+        "port": "s50002"
+    },
+    {
+        "host": "electrum3.hodlister.co",
+        "port": "s50002"
+    },
+    {
+        "host": "electrum4.hodlister.co",
+        "port": "s50002"
+    },
+    {
+        "host": "electrum5.hodlister.co",
+        "port": "s50002"
+    },
+    {
+        "host": "electrum6.hodlister.co",
+        "port": "s50002"
+    }
+]

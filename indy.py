@@ -34,10 +34,10 @@ def main():
 
     scanning = parser.add_argument_group('scanning parameters')
 
-    scanning.add_argument('--max-gap', metavar='<num>', default=20, type=int,
-                          help='address gap limit (default: 20)')
-    scanning.add_argument('--max-account', metavar='<num>', default=10, type=int,
-                          help='max number of account levels to explore (default: 10)')
+    scanning.add_argument('--address-gap', metavar='<num>', default=20, type=int,
+                          help='max empty addresses gap to explore (default: 20)')
+    scanning.add_argument('--account-gap', metavar='<num>', default=0, type=int,
+                          help='max empty account levels gap to explore (default: 0)')
 
     electrum = parser.add_argument_group('electrum server')
 
@@ -63,7 +63,7 @@ def main():
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
-        find_utxos(server, master_key, args.max_gap, args.max_account, args.address, args.fee_rate, args.broadcast)
+        find_utxos(server, master_key, args.address_gap, args.account_gap, args.address, args.fee_rate, args.broadcast)
     )
     loop.close()
 
@@ -101,8 +101,8 @@ def parse_key(key: str) -> BIP32:
 async def find_utxos(
         server: ServerInfo,
         master_key: BIP32,
-        max_gap: int,
-        max_account: int,
+        address_gap: int,
+        account_gap: int,
         address: Optional[str],
         fee_rate: Optional[int],
         should_broadcast: bool
@@ -117,7 +117,7 @@ async def find_utxos(
 
     print('🌍  Connected to electrum server successfully')
 
-    utxos = await scanner.scan_master_key(client, master_key, max_gap, max_account)
+    utxos = await scanner.scan_master_key(client, master_key, address_gap, account_gap)
 
     if len(utxos) == 0:
         print('😔  Didn\'t find any unspent outputs')

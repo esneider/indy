@@ -39,7 +39,7 @@ python3 indy.py --help
 
 ```
 usage: indy.py [-h] [--address <address>] [--broadcast] [--fee-rate <rate>]
-               [--max-gap <num>] [--max-account <num>] [--host <host>]
+               [--address-gap <num>] [--account-gap <num>] [--host <host>]
                [--port <port>] [--protocol {t,s}]
                key
 
@@ -58,8 +58,8 @@ sweep transaction:
   --fee-rate <rate>    fee rate to use in sat/vbyte (default: next block fee)
 
 scanning parameters:
-  --max-gap <num>      address gap limit (default: 20)
-  --max-account <num>  max number of account levels to explore (default: 10)
+  --address-gap <num>  max empty addresses gap to explore (default: 20)
+  --account-gap <num>  max empty account levels gap to explore (default: 0)
 
 electrum server:
   --host <host>        hostname of the electrum server to use

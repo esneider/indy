@@ -33,32 +33,30 @@ async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap:
 
     with tqdm(total=script_iter.total_scripts(), desc='🏃‍♀️  Searching possible addresses') as progress_bar:
         while True:
-            iter = script_iter.next_script()
-            if iter is None:
+            script = script_iter.next_script()
+            if not script:
                 break
 
             progress_bar.update(1)
 
-            script, path, index, address_type = iter
-
             # TODO: use an electrum client that supports batching
             # TODO: parallelize fetching
 
-            hash = _electrum_script_hash(script)
+            hash = _electrum_script_hash(script.program)
             response = await client.RPC('blockchain.scripthash.get_history', hash)
 
             if len(response) > 0:
 
-                if (path, address_type) not in descriptors:
-                    descriptors.add((path, address_type))
-                    message = f'🕵️‍♂️   Found used addresses at path={path.path} address_type={address_type.name}'
+                if (script.path, script.type) not in descriptors:
+                    descriptors.add((script.path, script.type))
+                    message = f'🕵️‍♂️   Found used addresses at path={script.path.path} address_type={script.type.name}'
                     print(f'\r{message}'.ljust(progress_bar.ncols + 2))  # print the message replacing the current line
 
                 response = await client.RPC('blockchain.scripthash.listunspent', hash)
                 for entry in response:
                     txid, output_index, amount = entry['tx_hash'], entry['tx_pos'], entry['value']
 
-                    utxo = Utxo(txid, output_index, amount, path.with_index(index), address_type)
+                    utxo = Utxo(txid, output_index, amount, script.path.with_index(script.index), script.type)
                     utxos.append(utxo)
 
                     message = f'💰  Found unspent output at ({txid}, {output_index}) with {amount} sats'

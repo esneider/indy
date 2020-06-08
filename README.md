@@ -13,7 +13,7 @@ You can use Indy to sweep all the funds to a destination address of your choice.
 * Supports sweeping funds from mnemonics, xprivs, and xpubs (for xpubs it will just find the UTXOs)
 * Supports mnemonics in English, Chinese, Spanish, French, Italian, Japanese and Korean
 * Supports all the derivation paths and address types from the wallets listed in [walletsrecovery.org](https://walletsrecovery.org/)
-* Supports customizing the gap limit and max account number
+* Supports customizing the address gap limit and the account gap limit
 * Supports using a custom electrum server
 
 ## Demo

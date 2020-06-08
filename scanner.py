@@ -47,22 +47,25 @@ async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap:
 
             if len(response) > 0:
 
-                if (script.path, script.type) not in descriptors:
-                    descriptors.add((script.path, script.type))
-                    message = f'🕵️‍♂️   Found used addresses at path={script.path.path} address_type={script.type.name}'
-                    print(f'\r{message}'.ljust(progress_bar.ncols + 2))  # print the message replacing the current line
+                path, type = script.path_with_account().path, script.type().name
+
+                if (path, type) not in descriptors:
+                    descriptors.add((path, type))
+                    message = f'🕵   Found used addresses at path={path} address_type={type}'
+                    print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
                 response = await client.RPC('blockchain.scripthash.listunspent', hash)
+
                 for entry in response:
                     txid, output_index, amount = entry['tx_hash'], entry['tx_pos'], entry['value']
 
-                    utxo = Utxo(txid, output_index, amount, script.path.with_index(script.index), script.type)
+                    utxo = Utxo(txid, output_index, amount, script.full_path(), script.type())
                     utxos.append(utxo)
 
                     message = f'💰  Found unspent output at ({txid}, {output_index}) with {amount} sats'
-                    print(f'\r{message}'.ljust(progress_bar.ncols + 2))  # print the message replacing the current line
+                    print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
-                script_iter.found_used_script()
+                script.set_as_used()
                 progress_bar.total = script_iter.total_scripts()
                 progress_bar.refresh()
 

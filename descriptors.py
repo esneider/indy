@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from collections import deque
+from collections import OrderedDict, deque
 from typing import List, Optional
 
 from bip32 import BIP32, HARDENED_INDEX
@@ -99,12 +99,23 @@ class Script:
     Data needed to spend a script.
     """
 
-    def __init__(self, program: bytes, index: int, account: int, path: Path, type: ScriptType):
+    def __init__(self, program: bytes, index: int, account: int, descriptor: DescriptorScriptIterator):
         self.program = program
         self.index = index
         self.account = account
-        self.path = path
-        self.type = type
+        self.descriptor = descriptor
+
+    def type(self) -> ScriptType:
+        return self.descriptor.script_type
+
+    def path_with_account(self) -> Path:
+        return self.descriptor.path.with_account(self.account)
+
+    def full_path(self) -> Path:
+        return self.path_with_account().with_index(self.index)
+
+    def set_as_used(self) -> None:
+        self.descriptor.found_used_script(self)
 
 
 class DescriptorScriptIterator:
@@ -121,40 +132,23 @@ class DescriptorScriptIterator:
         self.account = 0
         self.max_index = address_gap if path.has_variable_index() else 0
         self.max_account = account_gap if path.has_variable_account() else 0
-        self.extra_indices = deque()
-        self.extra_accounts = deque()
+        self.used_accounts = set()
+        self.priority_pairs = OrderedDict()
         self.total_scripts = (self.max_index + 1) * (self.max_account + 1)
 
     def _script_at(self, master_key: BIP32, index: int, account: int) -> Script:
         """
-        Render the script at a specific index and account.
+        Render the script at a specific index and account pair.
         """
-        path = self.path.with_account(account)
-        pubkey = master_key.get_pubkey_from_path(path.to_list(index))
+        pubkey = master_key.get_pubkey_from_path(self.path.to_list(index, account))
         script = self.script_type.build_output_script(pubkey)
 
-        return Script(script, index, account, path, self.script_type)
+        return Script(script, index, account, self)
 
-    def next_script(self, master_key: BIP32) -> Optional[Script]:
+    def _next_pair(self) -> None:
         """
-        Fetch the next script for the current descriptor.
+        Compute the next pair of index and account positions that we should explore.
         """
-        if self.extra_indices:
-            index, account = self.extra_indices.popleft()
-            return self._script_at(master_key, index, account)
-
-        if self.extra_accounts:
-            index, account = self.extra_accounts.popleft()
-            return self._script_at(master_key, index, account)
-
-        if self.index > self.max_index or self.account > self.max_account:
-            return None
-
-        response = self._script_at(master_key, self.index, self.account)
-
-        self.last_index = self.index
-        self.last_account = self.account
-
         # Since traversing the entire [0; MAX_INDEX] x [0; MAX_ACCOUNT] space of combinations might take a while, we
         # walk the (index, account) grid in diagonal order. This order prioritizes the most probable combinations
         # (ie. low index, low account), while letting us explore a large space in the long run.
@@ -180,32 +174,65 @@ class DescriptorScriptIterator:
             self.index -= 1
             self.account += 1
 
+    def next_script(self, master_key: BIP32) -> Optional[Script]:
+        """
+        Fetch the next script for the current descriptor.
+        """
+        # if there's any priority pairs, explore the first one
+        for account, indexes in list(self.priority_pairs.items()):
+            if indexes:
+                index = indexes.popleft()
+                return self._script_at(master_key, index, account)
+            else:
+                del self.priority_pairs[account]
+
+        # if we are off the grid, then we are done
+        if self.account > self.max_account:
+            return None
+
+        # generate the script for the current pair in the grid
+        response = self._script_at(master_key, self.index, self.account)
+
+        # and compute the next pair in the grid to explore
+        self._next_pair()
+        while self.account in self.used_accounts:
+            self._next_pair()
+
         return response
 
-    def found_used_script(self) -> None:
+    def found_used_script(self, script: Script) -> None:
         """
-        Update the next scripts to process knowing that the last script was used.
+        Update the priority scripts to process, knowing that a particular script was used.
         """
-        # explore enough indices in the same account to make sure we cover the address gap
-        for i in range(self.last_index + 1, self.last_index + self.address_gap + 1):
-            # TODO: this will be slow for large address gap limits
-            if i > self.max_index and (i, self.last_account) not in self.extra_indices:
-                self.extra_indices.append((i, self.account))
-                self.total_scripts += 1
+        # stop exploring the current account during the grid search
+        self.used_accounts.add(script.account)
 
-        # explore enough accounts to make sure we cover the account gap
-        while self.max_account <= self.last_account + self.account_gap:
+        if script.account not in self.priority_pairs:
+            self.priority_pairs[script.account] = deque()
+
+        # extend the priority list of pairs to explore with enough indexes so that the next address gap is covered
+        missing_indexes = self.priority_pairs[script.account]
+        last_index = missing_indexes[-1] if missing_indexes else script.index
+        new_indexes = range(last_index + 1, script.index + self.address_gap + 1)
+        missing_indexes.extend(new_indexes)
+        self.total_scripts += len([i for i in new_indexes if i > self.max_index])
+
+        # extend the priority list of pairs to explore with enough accounts so that the next account gap is covered
+        while self.max_account <= script.account + self.account_gap:
             self.max_account += 1
             self.total_scripts += self.max_index + 1
             current_diagonal = self.index + self.account
-            for i in range(current_diagonal - self.max_account):
-                self.extra_accounts.append((i, self.max_account))
+            missing_indexes = deque(range(current_diagonal - self.max_account))
+            self.priority_pairs[self.max_account] = missing_indexes
 
     def has_priority_scripts(self) -> bool:
         """
-        Whether this descriptor should be prioritized because its exploring a used account path.
+        Whether this descriptor should be prioritized because it's exploring a used account path.
         """
-        return bool(self.extra_indices)
+        for account, indexes in self.priority_pairs.items():
+            if indexes:
+                return True
+        return False
 
 
 class ScriptIterator:
@@ -260,9 +287,3 @@ class ScriptIterator:
         Compute the total number of scripts that were or will be explored.
         """
         return sum([d.total_scripts for d in self.descriptors])
-
-    def found_used_script(self) -> None:
-        """
-        Update the next scripts to process knowing that the last script was used.
-        """
-        self.last_descriptor.found_used_script()

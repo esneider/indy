@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import List
+from typing import List, Tuple
 
 from bip32 import BIP32
 from connectrum.client import StratumClient
@@ -43,9 +43,9 @@ async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap:
             # TODO: parallelize fetching
 
             hash = _electrum_script_hash(script.program)
-            response = await client.RPC('blockchain.scripthash.get_history', hash)
+            response = await _electrum_rpc(client, [('blockchain.scripthash.get_history', [hash])])
 
-            if len(response) > 0:
+            if len(response[0]) > 0:
 
                 path, type = script.path_with_account().path, script.type().name
 
@@ -54,9 +54,9 @@ async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap:
                     message = f'🕵   Found used addresses at path={path} address_type={type}'
                     print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
-                response = await client.RPC('blockchain.scripthash.listunspent', hash)
+                response = await _electrum_rpc(client, [('blockchain.scripthash.listunspent', [hash])])
 
-                for entry in response:
+                for entry in response[0]:
                     txid, output_index, amount = entry['tx_hash'], entry['tx_pos'], entry['value']
 
                     utxo = Utxo(txid, output_index, amount, script.full_path(), script.type())
@@ -79,3 +79,19 @@ def _electrum_script_hash(script: bytes) -> str:
     bytes = bytearray(scripts.sha256(script))
     bytes.reverse()
     return bytes.hex()
+
+
+async def _electrum_rpc(client: StratumClient, requests: List[Tuple[str, List[str]]]) -> List:
+    """
+    Perform an electrum RPC call, using batching if multiple requests are required.
+    """
+    if len(requests) == 0:
+        return []
+
+    if len(requests) == 1:
+        method, params = requests[0]
+        response = await client.RPC(method, *params)
+        return [response]
+
+    response = await client.batch_rpc(requests)
+    return response

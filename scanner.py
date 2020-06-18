@@ -9,6 +9,8 @@ import scripts
 from descriptors import ScriptIterator, Path
 from scripts import ScriptType
 
+MAX_BATCH_SIZE = 100
+
 
 class Utxo:
     """
@@ -23,29 +25,53 @@ class Utxo:
         self.script_type = script_type
 
 
-async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap: int, account_gap: int) -> List[Utxo]:
+async def scan_master_key(
+        client: StratumClient,
+        master_key: BIP32,
+        address_gap: int,
+        account_gap: int,
+        should_batch: bool
+) -> List[Utxo]:
     """
     Iterate through all the possible addresses of a master key, in order to find its UTXOs.
     """
+    batch_size = MAX_BATCH_SIZE if should_batch else 1
     script_iter = ScriptIterator(master_key, address_gap, account_gap)
     descriptors = set()
     utxos = []
 
+    # TODO: parallelize fetching
+
     with tqdm(total=script_iter.total_scripts(), desc='🏃‍♀️  Searching possible addresses') as progress_bar:
         while True:
-            script = script_iter.next_script()
-            if not script:
+
+            # Compute the next batch of scripts
+            scripts = []
+            for index in range(batch_size):
+                script = script_iter.next_script()
+                if not script:
+                    break
+                scripts.append(script)
+
+            if len(scripts) == 0:
+                # We are done!
                 break
 
-            progress_bar.update(1)
+            progress_bar.update(len(scripts))
 
-            # TODO: use an electrum client that supports batching
-            # TODO: parallelize fetching
+            # Build the next batched request
+            batch_request = []
+            for script in scripts:
+                hash = _electrum_script_hash(script.program)
+                batch_request.append(('blockchain.scripthash.get_history', [hash]))
 
-            hash = _electrum_script_hash(script.program)
-            response = await _electrum_rpc(client, [('blockchain.scripthash.get_history', [hash])])
+            responses = await _electrum_rpc(client, batch_request)
 
-            if len(response[0]) > 0:
+            # Using the responses, compute the next batch of *used* scripts
+            used_scripts = []
+            for script, response in zip(scripts, responses):
+                if len(response) == 0:
+                    continue
 
                 path, type = script.path_with_account().path, script.type().name
 
@@ -54,9 +80,19 @@ async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap:
                     message = f'🕵   Found used addresses at path={path} address_type={type}'
                     print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
-                response = await _electrum_rpc(client, [('blockchain.scripthash.listunspent', [hash])])
+                script.set_as_used()
+                used_scripts.append(script)
 
-                for entry in response[0]:
+            # Build the next batched request
+            batch_request = []
+            for script in used_scripts:
+                hash = _electrum_script_hash(script.program)
+                batch_request.append(('blockchain.scripthash.listunspent', [hash]))
+
+            responses = await _electrum_rpc(client, batch_request)
+
+            for script, response in zip(used_scripts, responses):
+                for entry in response:
                     txid, output_index, amount = entry['tx_hash'], entry['tx_pos'], entry['value']
 
                     utxo = Utxo(txid, output_index, amount, script.full_path(), script.type())
@@ -65,9 +101,9 @@ async def scan_master_key(client: StratumClient, master_key: BIP32, address_gap:
                     message = f'💰  Found unspent output at ({txid}, {output_index}) with {amount} sats'
                     print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
-                script.set_as_used()
-                progress_bar.total = script_iter.total_scripts()
-                progress_bar.refresh()
+            # Update the progress bar length, in case we now need to explore more scripts
+            progress_bar.total = script_iter.total_scripts()
+            progress_bar.refresh()
 
     return utxos
 

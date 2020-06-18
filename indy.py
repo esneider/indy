@@ -47,6 +47,8 @@ def main():
                           help='port number of the electrum server to use')
     electrum.add_argument('--protocol', choices='ts', default='s',
                           help='electrum connection protocol: t=TCP, s=SSL (default: s)')
+    electrum.add_argument('--no-batching', default=False, action='store_true',
+                          help='disable request batching')
 
     args = parser.parse_args()
 
@@ -62,9 +64,16 @@ def main():
         server = ServerInfo(server['host'], hostname=server['host'], ports=server['port'])
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        find_utxos(server, master_key, args.address_gap, args.account_gap, args.address, args.fee_rate, args.broadcast)
-    )
+    loop.run_until_complete(find_utxos(
+        server,
+        master_key,
+        args.address_gap,
+        args.account_gap,
+        args.address,
+        args.fee_rate,
+        args.broadcast,
+        not args.no_batching
+    ))
     loop.close()
 
 
@@ -105,7 +114,8 @@ async def find_utxos(
         account_gap: int,
         address: Optional[str],
         fee_rate: Optional[int],
-        should_broadcast: bool
+        should_broadcast: bool,
+        should_batch: bool
 ):
     """
     Connect to an electrum server and find all the UTXOs spendable by a master key.
@@ -117,7 +127,7 @@ async def find_utxos(
 
     print('🌍  Connected to electrum server successfully')
 
-    utxos = await scanner.scan_master_key(client, master_key, address_gap, account_gap)
+    utxos = await scanner.scan_master_key(client, master_key, address_gap, account_gap, should_batch)
 
     if len(utxos) == 0:
         print('😔  Didn\'t find any unspent outputs')

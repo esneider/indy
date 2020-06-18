@@ -251,7 +251,7 @@ class ScriptIterator:
 
     def _next_descriptor_script(self) -> Optional[Script]:
         """
-        Fetch the next script from the next descriptor. If the descriptor doesn't have a next script, remove it.
+        Fetch the next script from the next descriptor.
         """
         if self.last_descriptor and self.last_descriptor.has_priority_scripts():
             iter = self.last_descriptor.next_script(self.master_key)
@@ -260,10 +260,6 @@ class ScriptIterator:
 
         self.last_descriptor = self.descriptors[self.index]
         iter = self.last_descriptor.next_script(self.master_key)
-
-        if not iter:
-            del self.descriptors[self.index]
-            self.index -= 1
 
         self.index += 1
         if self.index >= len(self.descriptors):
@@ -275,10 +271,13 @@ class ScriptIterator:
         """
         Fetch the next script, cycling the descriptors in order to explore all of them progressively.
         """
-        while len(self.descriptors) > 0:
+        skipped = 0
+
+        while skipped < len(self.descriptors):
             iter = self._next_descriptor_script()
             if iter:
                 return iter
+            skipped += 1
 
         return None
 

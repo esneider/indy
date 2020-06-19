@@ -33,6 +33,8 @@ descriptors = {
     "m/84'/0'/2147483645'/1/i": [ScriptType.SEGWIT],  # Samourai pre-mix, change
     "m/84'/0'/2147483644'/0/i": [ScriptType.SEGWIT],  # Samourai bad-bank, external
     "m/84'/0'/2147483644'/1/i": [ScriptType.SEGWIT],  # Samourai bad-bank, change
+    "m/44'/0'/0'/0/i": [ScriptType.SEGWIT],  # Copay segwit, external
+    "m/44'/0'/0'/1/i": [ScriptType.SEGWIT],  # Copay segwit, change
 }
 
 

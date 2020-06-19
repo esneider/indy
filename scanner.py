@@ -57,8 +57,6 @@ async def scan_master_key(
                 # We are done!
                 break
 
-            progress_bar.update(len(scripts))
-
             # Build the next batched request
             batch_request = []
             for script in scripts:
@@ -101,8 +99,9 @@ async def scan_master_key(
                     message = f'💰  Found unspent output at ({txid}, {output_index}) with {amount} sats'
                     print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
-            # Update the progress bar length, in case we now need to explore more scripts
+            # Update the progress bar
             progress_bar.total = script_iter.total_scripts()
+            progress_bar.update(len(scripts))
             progress_bar.refresh()
 
     return utxos

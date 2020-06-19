@@ -8,10 +8,6 @@
         "port": "s50002"
     },
     {
-        "host": "electrum.hodlister.co",
-        "port": "s50002"
-    },
-    {
         "host": "electrum3.hodlister.co",
         "port": "s50002"
     },

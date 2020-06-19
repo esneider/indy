@@ -40,7 +40,7 @@ python3 indy.py --help
 ```
 usage: indy.py [-h] [--address <address>] [--broadcast] [--fee-rate <rate>]
                [--address-gap <num>] [--account-gap <num>] [--host <host>]
-               [--port <port>] [--protocol {t,s}]
+               [--port <port>] [--protocol {t,s}] [--no-batching]
                key
 
 Find and sweep all the funds from a mnemonic or bitcoin key, regardless of the
@@ -65,6 +65,7 @@ electrum server:
   --host <host>        hostname of the electrum server to use
   --port <port>        port number of the electrum server to use
   --protocol {t,s}     electrum connection protocol: t=TCP, s=SSL (default: s)
+  --no-batching        disable request batching
 ```
 
 ## Credits

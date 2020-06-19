@@ -63,7 +63,7 @@ async def scan_master_key(
             batch_request = []
             for script in scripts:
                 hash = _electrum_script_hash(script.program)
-                batch_request.append(('blockchain.scripthash.get_history', [hash]))
+                batch_request.append(('blockchain.scripthash.get_history', hash))
 
             responses = await _electrum_rpc(client, batch_request)
 
@@ -87,7 +87,7 @@ async def scan_master_key(
             batch_request = []
             for script in used_scripts:
                 hash = _electrum_script_hash(script.program)
-                batch_request.append(('blockchain.scripthash.listunspent', [hash]))
+                batch_request.append(('blockchain.scripthash.listunspent', hash))
 
             responses = await _electrum_rpc(client, batch_request)
 
@@ -117,7 +117,7 @@ def _electrum_script_hash(script: bytes) -> str:
     return bytes.hex()
 
 
-async def _electrum_rpc(client: StratumClient, requests: List[Tuple[str, List[str]]]) -> List:
+async def _electrum_rpc(client: StratumClient, requests: List[Tuple[str, ...]]) -> List:
     """
     Perform an electrum RPC call, using batching if multiple requests are required.
     """
@@ -125,8 +125,8 @@ async def _electrum_rpc(client: StratumClient, requests: List[Tuple[str, List[st
         return []
 
     if len(requests) == 1:
-        method, params = requests[0]
-        response = await client.RPC(method, *params)
+        request = requests[0]
+        response = await client.RPC(*request)
         return [response]
 
     response = await client.batch_rpc(requests)

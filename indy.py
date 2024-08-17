@@ -22,6 +22,8 @@ def main():
     )
 
     parser.add_argument('key', help='master key to sweep, formats: mnemonic, xpriv or xpub')
+    parser.add_argument('--passphrase', metavar='<passphrase>', default="",
+                        help='mnemonic passphrase, if any')
 
     sweep_tx = parser.add_argument_group('sweep transaction')
 
@@ -52,7 +54,7 @@ def main():
 
     args = parser.parse_args()
 
-    master_key = parse_key(args.key)
+    master_key = parse_key(args.key, args.passphrase)
 
     if args.host is not None:
         port = (args.protocol + str(args.port)) if args.port else args.protocol
@@ -77,7 +79,7 @@ def main():
     loop.close()
 
 
-def parse_key(key: str) -> BIP32:
+def parse_key(key: str, passphrase: str) -> BIP32:
     """
     Try to parse an extended key, whether it is in xpub, xpriv or mnemonic format.
     """
@@ -97,7 +99,7 @@ def parse_key(key: str) -> BIP32:
 
     try:
         language = Mnemonic.detect_language(key)
-        seed = Mnemonic(language).to_seed(key)
+        seed = Mnemonic(language).to_seed(key, passphrase=passphrase)
         private_key = BIP32.from_seed(seed)
         print('🔑  Read mnemonic successfully')
         return private_key

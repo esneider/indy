@@ -4,4 +4,4 @@ bech32==1.2.0
 coincurve==13.0.0
 git+https://github.com/esneider/connectrum.git#egg=connectrum
 asyncio==3.4.3
-tqdm==4.46.0
+tqdm==4.66.3

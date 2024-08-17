@@ -38,9 +38,9 @@ python3 indy.py --help
 ## Usage
 
 ```
-usage: indy.py [-h] [--address <address>] [--broadcast] [--fee-rate <rate>]
-               [--address-gap <num>] [--account-gap <num>] [--host <host>]
-               [--port <port>] [--protocol {t,s}] [--no-batching]
+usage: indy.py [-h] [--passphrase <pass>] [--address <address>] [--broadcast]
+               [--fee-rate <rate>] [--address-gap <num>] [--account-gap <num>]
+               [--host <host>] [--port <port>] [--protocol {t,s}] [--no-batching]
                key
 
 Find and sweep all the funds from a mnemonic or bitcoin key, regardless of the
@@ -51,6 +51,7 @@ positional arguments:
 
 optional arguments:
   -h, --help           show this help message and exit
+  --passphrase <pass>  optional secret phrase necessary to decode the mnemonic
 
 sweep transaction:
   --address <address>  craft a transaction sending all funds to this address

@@ -22,8 +22,8 @@ def main():
     )
 
     parser.add_argument('key', help='master key to sweep, formats: mnemonic, xpriv or xpub')
-    parser.add_argument('--passphrase', metavar='<passphrase>', default="",
-                        help='mnemonic passphrase, if any')
+    parser.add_argument('--passphrase', metavar='<pass>', default='',
+                        help='optional secret phrase necessary to decode the mnemonic')
 
     sweep_tx = parser.add_argument_group('sweep transaction')
 

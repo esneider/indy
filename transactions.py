@@ -36,38 +36,46 @@ class Transaction:
         self.outputs = [(amount_in_sat, output_script)]
         self.inputs = []
 
-        for index in range(len(utxos)):
-            utxo = utxos[index]
-
-            # Build the inputs for signing: they should all have empty scripts, save for the input that we are signing,
-            # which should have the output script of a P2PKH output.
+        if not utxos:
+            raise ValueError('No inputs')
+        if len({(u.txid,u.output_index) for u in utxos}) != len(utxos):
+            raise ValueError('Duplicate outpoints')
+        self.prevouts = []
+        for u in utxos:
+            pub = master_key.get_pubkey_from_path(u.path.to_list())
+            self.prevouts.append(u.script_type.build_output_script(pub))
+        for index, utxo in enumerate(utxos):
             pubkey = master_key.get_pubkey_from_path(utxo.path.to_list())
-            script = scripts.ScriptType.LEGACY.build_output_script(pubkey)
-            inputs = [(u, script if u == utxo else b'', []) for u in utxos]
-
-            if utxo.script_type == scripts.ScriptType.LEGACY:
-                # If this is a legacy input, then the transaction digest is just the wire format serialization.
-                tx = _serialize_tx(inputs, self.outputs, include_witness=False)
-            else:
-                # If this is a segwit input (native or not), then the transaction digest is the one defined in BIP143.
-                tx = _serialize_tx_for_segwit_signing(index, inputs, self.outputs)
-
-            # To produce the final message digest we need to append the sig-hash type, and double sha256 the message.
-            tx.extend(SIGHASH_ALL.to_bytes(4, 'little'))
-            hash = scripts.sha256(scripts.sha256(bytes(tx)))
-
             privkey = master_key.get_privkey_from_path(utxo.path.to_list())
-            signature = coincurve.PrivateKey(privkey).sign(hash, hasher=None)
-
-            extended_signature = bytearray(signature)
-            extended_signature.append(SIGHASH_ALL)
-            extended_signature = bytes(extended_signature)
-
-            self.inputs.append((
-                utxo,
-                utxo.script_type.build_input_script(pubkey, extended_signature),
-                utxo.script_type.build_witness(pubkey, extended_signature)
-            ))
+            if utxo.script_type == scripts.ScriptType.TAPROOT:
+                digest = _taproot_sighash(utxos, self.prevouts, self.outputs, index)
+                # BIP86: coincurve's tweak_add handles the internal-key parity.
+                internal = coincurve.PrivateKey(privkey)
+                secret = int.from_bytes(privkey, 'big')
+                if internal.public_key.format(compressed=True)[0] == 3:
+                    secret = scripts.SECP256K1_ORDER - secret
+                tweak = int.from_bytes(scripts.tagged_hash('TapTweak', pubkey[1:]), 'big')
+                if tweak >= scripts.SECP256K1_ORDER:
+                    raise ValueError('Invalid tap tweak')
+                tweaked = (secret + tweak) % scripts.SECP256K1_ORDER
+                if not tweaked:
+                    raise ValueError('Invalid tweaked secret')
+                key = coincurve.PrivateKey(tweaked.to_bytes(32, 'big'))
+                if key.public_key.format(compressed=True)[1:] != self.prevouts[index][2:]:
+                    raise ValueError('Taproot output key mismatch')
+                signature = key.sign_schnorr(digest, aux_randomness=b'\x00'*32)
+                self.inputs.append((utxo, b'', [signature]))
+                continue
+            scriptcode = scripts.ScriptType.LEGACY.build_output_script(pubkey)
+            unsigned = [(u, scriptcode if j == index else b'', []) for j,u in enumerate(utxos)]
+            if utxo.script_type == scripts.ScriptType.LEGACY:
+                preimage = _serialize_tx(unsigned, self.outputs, include_witness=False)
+            else:
+                preimage = _serialize_tx_for_segwit_signing(index, unsigned, self.outputs)
+            digest = scripts.sha256(scripts.sha256(bytes(preimage) + SIGHASH_ALL.to_bytes(4,'little')))
+            signature = coincurve.PrivateKey(privkey).sign(digest, hasher=None) + bytes([SIGHASH_ALL])
+            self.inputs.append((utxo, utxo.script_type.build_input_script(pubkey, signature),
+                                utxo.script_type.build_witness(pubkey, signature)))
 
     def virtual_size(self) -> int:
         """
@@ -76,7 +84,7 @@ class Transaction:
         witness_tx = _serialize_tx(self.inputs, self.outputs)
         non_witness_tx = _serialize_tx(self.inputs, self.outputs, include_witness=False)
 
-        return (3 * len(non_witness_tx) + len(witness_tx)) // 4
+        return (3 * len(non_witness_tx) + len(witness_tx) + 3) // 4
 
     def to_bytes(self) -> bytes:
         """
@@ -195,3 +203,17 @@ def _reversed(array: bytes) -> bytes:
     array = bytearray(array)
     array.reverse()
     return bytes(array)
+
+
+def _taproot_sighash(utxos, prevouts, outputs, index):
+    # BIP341 key-path, SIGHASH_DEFAULT, no annex, no ANYONECANPAY.
+    def h(data): return scripts.sha256(bytes(data))
+    outpoints = b''.join(_reversed(bytes.fromhex(u.txid)) + u.output_index.to_bytes(4,'little') for u in utxos)
+    amounts = b''.join(u.amount_in_sat.to_bytes(8,'little') for u in utxos)
+    spks = b''.join(_varint(len(s)) + s for s in prevouts)
+    sequences = SEQUENCE.to_bytes(4,'little') * len(utxos)
+    outs = b''.join(a.to_bytes(8,'little') + _varint(len(s)) + s for a,s in outputs)
+    msg = (b'\x00' + b'\x00' + VERSION.to_bytes(4,'little') + LOCKTIME.to_bytes(4,'little')
+           + h(outpoints) + h(amounts) + h(spks) + h(sequences) + h(outs)
+           + b'\x00' + index.to_bytes(4,'little'))
+    return scripts.tagged_hash('TapSighash', msg)

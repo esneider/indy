@@ -18,6 +18,8 @@ descriptors = {
     "m/49'/0'/a'/1/i": [ScriptType.COMPAT],  # BIP49, change
     "m/84'/0'/a'/0/i": [ScriptType.SEGWIT],  # BIP84, external
     "m/84'/0'/a'/1/i": [ScriptType.SEGWIT],  # BIP84, change
+    "m/86'/0'/a'/0/i": [ScriptType.TAPROOT],  # BIP86, external
+    "m/86'/0'/a'/1/i": [ScriptType.TAPROOT],  # BIP86, change
     "m/0'/0'/i'": [ScriptType.LEGACY, ScriptType.COMPAT, ScriptType.SEGWIT],  # Bitcoin Core
     "m/0'/0/i": [ScriptType.LEGACY, ScriptType.COMPAT, ScriptType.SEGWIT],  # BRD/Hodl/Coin/Multibit external
     "m/0'/1/i": [ScriptType.LEGACY, ScriptType.COMPAT, ScriptType.SEGWIT],  # BRD/Hodl/Coin/Multibit change
@@ -133,10 +135,11 @@ class DescriptorScriptIterator:
         self.index = 0
         self.account = 0
         self.max_index = address_gap if path.has_variable_index() else 0
-        self.max_account = account_gap if path.has_variable_account() else 0
+        self.max_account = max(account_gap - 1, 0) if path.has_variable_account() else 0
         self.used_accounts = set()
         self.priority_pairs = OrderedDict()
         self.total_scripts = (self.max_index + 1) * (self.max_account + 1)
+        self.seen_pairs = set()
 
     def _script_at(self, master_key: BIP32, index: int, account: int) -> Script:
         """
@@ -184,6 +187,9 @@ class DescriptorScriptIterator:
         for account, indexes in list(self.priority_pairs.items()):
             if indexes:
                 index = indexes.popleft()
+                if (index, account) in self.seen_pairs:
+                    continue
+                self.seen_pairs.add((index, account))
                 return self._script_at(master_key, index, account)
             else:
                 del self.priority_pairs[account]
@@ -193,14 +199,17 @@ class DescriptorScriptIterator:
             return None
 
         # generate the script for the current pair in the grid
-        response = self._script_at(master_key, self.index, self.account)
+        index, account = self.index, self.account
 
         # and compute the next pair in the grid to explore
         self._next_pair()
         while self.account in self.used_accounts:
             self._next_pair()
 
-        return response
+        if (index, account) in self.seen_pairs:
+            return self.next_script(master_key)
+        self.seen_pairs.add((index, account))
+        return self._script_at(master_key, index, account)
 
     def found_used_script(self, script: Script) -> None:
         """
@@ -219,13 +228,9 @@ class DescriptorScriptIterator:
         missing_indexes.extend(new_indexes)
         self.total_scripts += len([i for i in new_indexes if i > self.max_index])
 
-        # extend the priority list of pairs to explore with enough accounts so that the next account gap is covered
-        while self.max_account <= script.account + self.account_gap:
-            self.max_account += 1
-            self.total_scripts += self.max_index + 1
-            current_diagonal = self.index + self.account
-            missing_indexes = deque(range(current_diagonal - self.max_account))
-            self.priority_pairs[self.max_account] = missing_indexes
+        # Fixed account range: never stop at an empty intermediate account.
+        # --account-gap N scans accounts 0 through N-1 in each variable-account descriptor.
+        # No dynamic account extension is needed.
 
     def has_priority_scripts(self) -> bool:
         """

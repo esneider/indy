@@ -42,7 +42,7 @@ async def scan_master_key(
 
     # TODO: parallelize fetching
 
-    with tqdm(total=script_iter.total_scripts(), desc='🏃‍♀️  Searching possible addresses') as progress_bar:
+    with tqdm(total=script_iter.total_scripts(), desc='🔂  Searching possible addresses') as progress_bar:
         while True:
 
             # Compute the next batch of scripts
@@ -75,7 +75,7 @@ async def scan_master_key(
 
                 if (path, type) not in descriptors:
                     descriptors.add((path, type))
-                    message = f'🕵   Found used addresses at path={path} address_type={type}'
+                    message = f'🔐   Found used addresses at path={path} address_type={type}'
                     print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
                 script.set_as_used()
@@ -96,7 +96,11 @@ async def scan_master_key(
                     utxo = Utxo(txid, output_index, amount, script.full_path(), script.type())
                     utxos.append(utxo)
 
-                    message = f'💰  Found unspent output at ({txid}, {output_index}) with {amount} sats'
+                    message = (
+                        f'💲  Found unspent output at ({txid}, {output_index}) '
+                        f'with {amount} sats | path={script.full_path().path} '
+                        f'| address_type={script.type().name}'
+                    )
                     print(f'\r{message}'.ljust(progress_bar.ncols))  # print the message replacing the current line
 
             # Update the progress bar

@@ -5,8 +5,11 @@ from typing import Optional, List
 
 import base58
 import bech32
+import coincurve
 
 OP_0 = 0x00
+OP_1 = 0x51
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 OP_DUP = 0x76
 OP_EQUAL = 0x87
 OP_EQUALVERIFY = 0x88
@@ -29,6 +32,7 @@ class ScriptType(Enum):
     LEGACY = auto()  # P2PKH
     COMPAT = auto()  # P2SH of P2WPKH
     SEGWIT = auto()  # P2WPKH
+    TAPROOT = auto()  # P2TR BIP86 (solo deteccion)
 
     def build_output_script(self, pubkey: bytes) -> bytes:
         """
@@ -43,6 +47,9 @@ class ScriptType(Enum):
 
         if self is ScriptType.SEGWIT:
             return _build_segwit_output_script(hash160(pubkey))
+
+        if self is ScriptType.TAPROOT:
+            return _build_taproot_output_script(pubkey)
 
         raise ValueError('Unrecognized address type')
 
@@ -160,3 +167,23 @@ def _build_p2sh_input_script(*args: bytes) -> bytes:
         script.extend(arg)
 
     return bytes(script)
+
+
+def _build_taproot_output_script(pubkey: bytes) -> bytes:
+    """BIP86 key-path P2TR: OP_1 PUSH32 x(Q), Q=lift_x(P)+TapTweak(x(P))*G."""
+    if len(pubkey) != 33 or pubkey[0] not in (2, 3):
+        raise ValueError('BIP86 requires a compressed secp256k1 public key')
+    internal_x = pubkey[1:]
+    # lift_x: choose the point with even Y, regardless of the derived key's parity.
+    internal_even = coincurve.PublicKey(b'\x02' + internal_x)
+    tag = sha256(b'TapTweak')
+    tweak = int.from_bytes(sha256(tag + tag + internal_x), 'big')
+    if tweak >= SECP256K1_ORDER:
+        raise ValueError('Invalid TapTweak')
+    output_key = internal_even.add(tweak.to_bytes(32, 'big'))
+    return bytes([OP_1, 32]) + output_key.format(compressed=True)[1:]
+
+
+def tagged_hash(tag: str, message: bytes) -> bytes:
+    t = sha256(tag.encode('ascii'))
+    return sha256(t+t+message)
